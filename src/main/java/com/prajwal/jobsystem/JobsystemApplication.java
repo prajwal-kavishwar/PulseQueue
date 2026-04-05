@@ -1,0 +1,13 @@
+package com.prajwal.jobsystem;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class JobsystemApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(JobsystemApplication.class, args);
+	}
+
+}
