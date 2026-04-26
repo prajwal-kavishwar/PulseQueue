@@ -51,6 +51,7 @@ Client → API → Redis Queue → Worker Pool → PostgreSQL
 
 
 ## *Running the project*
+Configure the application.properties enter your postgres password and username and assign new ports if needed then 
 
 1. Start Redis
 2. Start PostgreSQL (create `job_system` database)
