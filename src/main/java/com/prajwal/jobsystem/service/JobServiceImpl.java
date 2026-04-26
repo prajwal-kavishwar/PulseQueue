@@ -3,6 +3,7 @@ package com.prajwal.jobsystem.service;
 
 import com.prajwal.jobsystem.dto.JobRequest;
 import com.prajwal.jobsystem.dto.JobResponse;
+import com.prajwal.jobsystem.dto.JobStatsDTO;
 import com.prajwal.jobsystem.dto.JobStatusDTO;
 import com.prajwal.jobsystem.exception.JobNotFoundException;
 import com.prajwal.jobsystem.model.JobStatus;
@@ -15,18 +16,22 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class JobServiceImpl implements JobService{
 
     private final JobRepository jobRepository;
 
-    private final ExecutorService executorService;
 
-    public JobServiceImpl(JobRepository jobRepository, ExecutorService executorService) {
+    private static final Logger log = LoggerFactory.getLogger(JobServiceImpl.class);
+    private final RedisQueueService queueService;
+    public JobServiceImpl(JobRepository jobRepository, RedisQueueService queueService) {
         this.jobRepository = jobRepository;
-        this.executorService = executorService;
+
+        this.queueService = queueService;
     }
 
 
@@ -64,11 +69,12 @@ public class JobServiceImpl implements JobService{
         Job job=jobRepository.findById(jobId)
                 .orElseThrow(()-> new JobNotFoundException(jobId));
 
+
         if (job.getStatus() != JobStatus.SUBMITTED) {
             return;
         }
         job.setStatus(JobStatus.PROCESSING);
-        System.out.println("Processing job: " + jobId);
+        log.info("Processing job: {}", jobId);
         jobRepository.save(job);
 
         try{
@@ -79,16 +85,27 @@ public class JobServiceImpl implements JobService{
 
         }
         catch (Exception e){
+            int retries = job.getRetryCount();
+            if(retries<3) {
+                job.setRetryCount(retries+1);
+                job.setStatus(JobStatus.SUBMITTED); // retry again
+
+                log.warn("Retrying job: {} attempt: {}", jobId, retries + 1);
+
+                jobRepository.save(job);
+                submitJob(jobId);//retry job(submit)
+                return;
+            }
             job.setStatus(JobStatus.FAILED);
-            job.setResult(e.getMessage());
+            job.setError(e.getMessage());
             job.setCompletedAt(LocalDateTime.now());
         }
         jobRepository.save(job);
     }
     private String executeJobLogic(Job job)throws Exception{
 
-        switch (job.getType()){
-            case "Email":
+        switch (job.getType().toUpperCase()){
+            case "EMAIL":
                 return "email sent successfully";
             case "REPORT":
                 return "Report generated";
@@ -98,7 +115,24 @@ public class JobServiceImpl implements JobService{
         }
     }
     public void submitJob(UUID jobId){
-        executorService.submit(()->processJob(jobId));
+        log.info("Submitting job: {}" ,jobId);
+        queueService.enqueue(jobId.toString());
+    }
+
+
+    public JobStatsDTO getJobStats() {
+
+        long submitted = jobRepository.countByStatus(JobStatus.SUBMITTED);
+        long processing = jobRepository.countByStatus(JobStatus.PROCESSING);
+        long completed = jobRepository.countByStatus(JobStatus.COMPLETED);
+        long failed = jobRepository.countByStatus(JobStatus.FAILED);
+
+        return JobStatsDTO.builder()
+                .submitted(submitted)
+                .processing(processing)
+                .completed(completed)
+                .failed(failed)
+                .build();
     }
 
 

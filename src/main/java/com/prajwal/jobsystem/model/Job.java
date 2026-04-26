@@ -50,6 +50,9 @@ public class Job {
     @Column(nullable = false)
     private LocalDateTime updatedAt;
 
+    @Column(nullable = false)
+    private int retryCount = 0;
+
     @PrePersist
     public void onCreate() {
         this.createdAt = LocalDateTime.now();
